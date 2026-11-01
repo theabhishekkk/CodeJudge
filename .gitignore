@@ -10,3 +10,4 @@ coverage/
 backend/test.db
 
 *.tsbuildinfo
+.venv/
