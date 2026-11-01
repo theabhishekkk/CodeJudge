@@ -2,10 +2,13 @@ PYTHON ?= python
 CELERY_POOL ?=
 WORKER_POOL ?= threads
 WORKER_CONCURRENCY ?=
+BENCH_ARGS ?=
+METRICS_ARGS ?=
+LOADTEST_ARGS ?=
 WORKER_POOL_FLAG = $(if $(CELERY_POOL),$(CELERY_POOL),--pool=$(WORKER_POOL))
 WORKER_CONCURRENCY_FLAG = $(if $(WORKER_CONCURRENCY),--concurrency=$(WORKER_CONCURRENCY),)
 
-.PHONY: up down migrate seed images worker test test-docker lint bench frontend
+.PHONY: up down migrate seed images worker test test-docker lint bench metrics loadtest frontend
 
 up:
 	@docker compose up -d --build --wait postgres rabbitmq redis api frontend
@@ -35,7 +38,13 @@ lint:
 	@cd backend && $(PYTHON) -m ruff check .
 
 bench:
-	@$(PYTHON) scripts/benchmark.py
+	@$(PYTHON) scripts/benchmark.py $(BENCH_ARGS)
+
+metrics:
+	@$(PYTHON) scripts/metrics.py $(METRICS_ARGS)
+
+loadtest:
+	@$(PYTHON) scripts/load_test.py $(LOADTEST_ARGS)
 
 frontend:
 	@cd frontend && npm ci && npm run build
