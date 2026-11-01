@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from codejudge.core.db import Base
 from codejudge.core.enums import BatchStatus, SubmissionStatus
-from codejudge.core.models import Batch, Problem, Submission, User
+from codejudge.core.models import Batch, Problem, Submission, TestCase, User
 from codejudge.worker import sandbox, tasks
 
 
@@ -111,6 +111,147 @@ def test_sandbox_executes_demo_verdict_cases(
     )
     assert verdict == expected_verdict
     assert result["concurrent_containers"] == 1
+
+
+@pytest.mark.docker
+def test_demo_verdicts_through_real_worker_and_sandbox(
+    docker_client: docker.DockerClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    test_session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(tasks, "SessionLocal", test_session_factory)
+    monkeypatch.setattr(tasks.settings, "SANDBOX_WORKDIR", str(tmp_path))
+
+    class FakeRedis:
+        def set(self, *_args: object, **_kwargs: object) -> bool:
+            return True
+
+        def eval(self, *_args: object, **_kwargs: object) -> int:
+            return 1
+
+        def close(self) -> None:
+            return None
+
+    class Slot:
+        live_count = 1
+
+        def mark_running(self) -> int:
+            return self.live_count
+
+    @contextmanager
+    def acquire(_redis_client: object, **_kwargs: object) -> Iterator[Slot]:
+        yield Slot()
+
+    monkeypatch.setattr(tasks.redis.Redis, "from_url", lambda *_args, **_kwargs: FakeRedis())
+    monkeypatch.setattr(sandbox.container_semaphore, "acquire", acquire)
+
+    cases = [
+        ("python-ac-1", "python3", "print(sum(map(int, input().split())))", "AC"),
+        ("python-ac-2", "python3", "a, b = map(int, input().split())\nprint(a + b)", "AC"),
+        (
+            "cpp-ac-1",
+            "cpp17",
+            "#include <iostream>\nint main() { long long a, b; std::cin >> a >> b; std::cout << a + b << std::endl; }",
+            "AC",
+        ),
+        (
+            "cpp-ac-2",
+            "cpp17",
+            "#include <iostream>\nusing namespace std;\nint main() { int a, b; if (cin >> a >> b) cout << (a + b) << endl; }",
+            "AC",
+        ),
+        ("wrong-answer", "python3", "print(0)", "WA"),
+        ("runtime-error", "python3", "raise RuntimeError('demo runtime error')", "RE"),
+        ("time-limit", "python3", "while True:\n    pass", "TLE"),
+        *[
+            (
+                f"memory-limit-{index + 1:02d}",
+                "python3",
+                f"import mmap\nsize = {chunk_size} * 1024 * 1024\ndata = mmap.mmap(-1, size)\npopulate_write = getattr(mmap, 'MADV_POPULATE_WRITE', 23)\ntry:\n    data.madvise(populate_write)\nexcept (AttributeError, OSError):\n    pass\ndata[::4096] = bytes([{index + 1}]) * ((size + 4095) // 4096)",
+                "MLE",
+            )
+            for index, chunk_size in enumerate((320, 352, 384, 416, 448, 480, 512, 544, 576, 608))
+        ],
+    ]
+    submission_ids: dict[str, str] = {}
+    with test_session_factory() as db:
+        user = User(email="demo-verdicts@example.com", password_hash="hash")
+        problem = Problem(
+            title="Demo verdict verification",
+            statement="Read two integers and print their sum.",
+            time_limit_ms=1000,
+            memory_limit_mb=256,
+        )
+        db.add_all([user, problem])
+        db.flush()
+        db.add(TestCase(problem_id=problem.id, ordinal=1, input="1 2\n", expected_output="3\n"))
+        db.flush()
+        for sample_id, language, source, _expected in cases:
+            submission = Submission(
+                user_id=user.id,
+                problem_id=problem.id,
+                language_id=language,
+                source_code=source,
+                sample_id=sample_id,
+            )
+            db.add(submission)
+            db.flush()
+            submission_ids[sample_id] = submission.id
+        db.commit()
+
+    sandbox_results: dict[str, dict[str, object]] = {}
+    real_run_sandbox = tasks.run_sandbox_command
+
+    def capture_sandbox_result(**kwargs: object) -> dict[str, object]:
+        result = real_run_sandbox(**kwargs)
+        sandbox_results[str(kwargs["submission_id"])] = result
+        return result
+
+    monkeypatch.setattr(tasks, "run_sandbox_command", capture_sandbox_result)
+    actual_verdicts: dict[str, str] = {}
+    details: dict[str, str | None] = {}
+    for sample_id, _language, _source, _expected in cases:
+        submission_id = submission_ids[sample_id]
+        actual_verdicts[sample_id] = tasks.evaluate_submission.run(submission_id)
+        with test_session_factory() as db:
+            submission = db.get(Submission, submission_id)
+            assert submission is not None
+            details[sample_id] = submission.detail
+
+    print(
+        "Generated-style C++ sandbox diagnostics:",
+        {
+            sample_id: {
+                "compile_stderr": sandbox_results[submission_ids[sample_id]]["stderr"],
+                "detail": details[sample_id],
+                "verdict": actual_verdicts[sample_id],
+            }
+            for sample_id in ("cpp-ac-1", "cpp-ac-2")
+        },
+    )
+    print("Memory bomb sandbox diagnostics:", {
+        sample_id: {
+            "result": sandbox_results[submission_ids[sample_id]],
+            "detail": details[sample_id],
+        }
+        for sample_id, *_ in cases
+        if sample_id.startswith("memory-limit-")
+    })
+    assert actual_verdicts == {sample_id: expected for sample_id, _, _, expected in cases}
+    assert all(details[sample_id] is None for sample_id in ("cpp-ac-1", "cpp-ac-2"))
+    assert all(
+        sandbox_results[submission_ids[sample_id]]["oom_killed"] is True
+        for sample_id, *_ in cases
+        if sample_id.startswith("memory-limit-")
+    )
+    engine.dispose()
 
 
 @pytest.mark.docker

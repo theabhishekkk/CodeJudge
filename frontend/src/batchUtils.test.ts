@@ -73,7 +73,16 @@ describe('demo batch generator', () => {
 
     expect(items).toHaveLength(120);
     expect(counts).toEqual({ AC: 70, WA: 20, RE: 10, TLE: 10, MLE: 10 });
-    expect(items.filter((item) => item.language_id === 'cpp17')).toHaveLength(20);
+    const cppItems = items.filter((item) => item.language_id === 'cpp17');
+    expect(cppItems).toHaveLength(20);
+    expect(items.every((item) => !item.source_code.includes('\\n'))).toBe(true);
+    expect(cppItems.every((item) => item.source_code.includes('#include <iostream>\n'))).toBe(true);
     expect(items.find((item) => item.sample_id === 'demo-TLE-03')?.source_code).toContain('while True');
+    const memorySamples = items.filter((item) => item.sample_id?.startsWith('demo-MLE-'));
+    expect(new Set(memorySamples.map((item) => item.source_code)).size).toBe(10);
+    expect(memorySamples.every((item) => (
+      item.source_code.includes('data.madvise(populate_write)')
+      && item.source_code.includes('data[::4096] = bytes([')
+    ))).toBe(true);
   });
 });
