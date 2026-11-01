@@ -7,3 +7,4 @@
 - Batch metadata is stored separately from submissions; `submissions.batch_id` stays nullable so the existing single-submission path and historic rows remain unchanged.
 - Repeated batch items use zero-based `repeat_index` values, and `queued_at` is set when the submission is created so queue-wait measurements include broker delay.
 - Batch and worker capacity limits are configurable through environment-backed settings, with conservative defaults and a worker-side container limit independent of Celery concurrency.
+- Container capacity uses renewable Redis leases scoped by `WORKER_HOST_ID`, so threads and prefork processes share one host limit; the worker heartbeat separately lets the sweeper distinguish live execution from a lost worker.
