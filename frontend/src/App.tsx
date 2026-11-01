@@ -15,6 +15,7 @@ import {
   type Submission,
   type SubmissionSummary,
 } from './api';
+import { BatchCreatePage, BatchHistoryPage, BatchLivePage } from './BatchPages';
 import { useAuth } from './auth';
 import { useNotice } from './notice';
 
@@ -83,6 +84,8 @@ function AppLayout() {
               <Link to="/problems">Problems</Link>
               <Link to="/submissions">Submissions</Link>
               <Link to="/dashboard">Dashboard</Link>
+              <Link to="/batch">Batch Run</Link>
+              <Link to="/batches">Batches</Link>
               <span className="user-email">{user.email}</span>
               <button className="button button-quiet button-small" onClick={logout}>Logout</button>
             </>
@@ -110,6 +113,9 @@ function AppLayout() {
           <Route path="/submissions" element={<RequireAuth><SubmissionsPage /></RequireAuth>} />
           <Route path="/submissions/:id" element={<RequireAuth><SubmissionPage /></RequireAuth>} />
           <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+          <Route path="/batch" element={<RequireAuth><BatchCreatePage /></RequireAuth>} />
+          <Route path="/batches" element={<RequireAuth><BatchHistoryPage /></RequireAuth>} />
+          <Route path="/batch/:id" element={<RequireAuth><BatchLivePage /></RequireAuth>} />
           <Route path="/stats" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
@@ -378,7 +384,7 @@ function SubmissionPage() {
         if (!active) return;
         setSubmission(next);
         setError('');
-        if (next.status !== 'COMPLETED' && next.status !== 'ERROR') {
+        if (next.status !== 'COMPLETED' && next.status !== 'ERROR' && next.status !== 'CANCELLED') {
           timeout = setTimeout(poll, 1000);
         }
       } catch (cause) {
@@ -403,7 +409,7 @@ function SubmissionPage() {
 
   if (error && !submission) return <EmptyState>{error}</EmptyState>;
   if (!submission) return <Loading label="Loading submission…" />;
-  const completed = submission.status === 'COMPLETED' || submission.status === 'ERROR';
+  const completed = ['COMPLETED', 'ERROR', 'CANCELLED'].includes(submission.status);
 
   return (
     <>
