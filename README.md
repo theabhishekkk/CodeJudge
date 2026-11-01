@@ -413,3 +413,26 @@ docker compose --profile worker up -d --build worker beat
 The queue deletion is only needed when upgrading an existing queue that was declared without priority support. The new queue declaration uses `x-max-priority=10`; interactive submissions have priority 5 and batch submissions priority 1. Do not delete the queue for normal restarts or on a fresh install. The additive batch migration advances to `20261101_0002`.
 
 The easiest way to check service state is `docker compose ps`; API and frontend health checks should be healthy. Confirm the API responds at `/api/health`, the worker consumes the `codejudge` queue, and Beat is running once. For full deployment guidance and capacity trade-offs, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Windows & WSL2 Troubleshooting
+
+- **Line endings:** Git must check out repository text files with LF (Linux) line endings. CRLF files can prevent Linux Docker sandbox runner scripts from starting correctly and can surface as Runtime Error verdicts. The repository's `.gitattributes` enforces LF; in WSL, set `git config --global core.autocrlf false` and, if needed, re-normalize tracked files with `git add --renormalize .`.
+- **Resource constraints:** On machines with 8 GB RAM or less, set `MAX_PARALLEL_CONTAINERS=1` in `.env` and start the host worker with `WORKER_CONCURRENCY=1`. Limiting both concurrent sandboxes and worker tasks helps prevent out-of-memory kills and swap-induced Time Limit Exceeded (TLE) verdicts.
+
+To rebuild both sandbox images and restart the local services with those resource settings:
+
+```bash
+# Add these settings to .env before starting the worker:
+# MAX_PARALLEL_CONTAINERS=1
+# WORKER_CONCURRENCY=1
+docker compose down
+make images
+make up
+sleep 5
+make migrate
+make seed
+if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
+make worker WORKER_POOL=threads WORKER_CONCURRENCY=1
+```
+
+`make up` already starts Compose services in detached mode and waits for health checks; do not append `-d` to the Make command. The worker command runs in the foreground; keep that terminal open and stop it with Ctrl+C. `docker compose down` preserves named database volumes; do not add `-v` unless you intend to delete persisted data.
