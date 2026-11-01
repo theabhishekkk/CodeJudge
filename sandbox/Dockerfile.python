@@ -1,0 +1,5 @@
+FROM python:3.10-slim
+WORKDIR /app
+COPY ./backend/codejudge/worker/runner/runner.py /runner/runner.py
+RUN mkdir -p /code /data /out /runner && chmod -R 755 /runner
+CMD ["python", "/runner/runner.py"]

@@ -1,0 +1,73 @@
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #e5e7eb;
+  background: #111827;
+}
+
+body {
+  margin: 0;
+  background: #0f172a;
+}
+
+.app-shell {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  padding-bottom: 1rem;
+}
+
+.nav a {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.panel {
+  background: #1f2937;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 1rem;
+}
+
+textarea, select, button {
+  display: block;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #374151;
+}
+
+button {
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+}
+
+.bars {
+  height: 200px;
+  display: flex;
+  align-items: end;
+  gap: 1rem;
+}
+
+.bars span {
+  width: 80px;
+  background: #22c55e;
+  border-radius: 8px 8px 0 0;
+  display: block;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #374151;
+}
