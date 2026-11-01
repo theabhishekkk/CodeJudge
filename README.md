@@ -17,12 +17,13 @@ FastAPI ─── PostgreSQL
 RabbitMQ → Celery worker → fresh Docker sandbox per test
 ```
 
-- **FastAPI** handles authentication, problems, submission requests, history, and statistics.
-- **PostgreSQL** stores users, problems, test cases, submissions, and per-test metrics.
-- **RabbitMQ and Celery** provide asynchronous grading. Grading tasks use the `codejudge` queue.
-- **Redis** is used as the Celery result backend and for service health checks.
+- **FastAPI** handles authentication, problems, single and batch submission requests, history, and statistics.
+- **PostgreSQL** stores users, problems, test cases, batches, submissions, and per-test metrics.
+- **RabbitMQ and Celery** provide asynchronous grading on the priority-enabled `codejudge` queue.
+- **Redis** is used as the Celery result backend, for per-host sandbox capacity leases, worker heartbeats, and recovery coordination.
 - **Docker** runs each untrusted solution in a short-lived, resource-limited container with networking disabled.
-- **React, TypeScript, and Vite** provide registration/login, problem solving, submission polling/history, and the dashboard.
+- **Celery Beat** periodically recovers stale queued work and finalizes batches after worker loss.
+- **React, TypeScript, and Vite** provide registration/login, problem solving, batch creation/history/live progress, submission polling/history, and the dashboard.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for more detail.
 
@@ -62,10 +63,10 @@ Prerequisites: Docker with Compose, Git Bash/WSL or another Bash shell, Python 3
    make worker
    ```
 
-   The worker consumes only the `codejudge` queue. On Windows, use the solo pool:
+   The worker consumes only the `codejudge` queue. The default pool is `threads`; this is also the recommended pool on Windows:
 
    ```bash
-   make worker CELERY_POOL=--pool=solo
+   make worker WORKER_POOL=threads WORKER_CONCURRENCY=4
    ```
 
 6. Open the application at <http://localhost:5173>. The API is at <http://localhost:8000>; interactive API documentation is at <http://localhost:8000/docs>.
@@ -77,10 +78,10 @@ Prerequisites: Docker with Compose, Git Bash/WSL or another Bash shell, Python 3
 Start the optional Compose worker with:
 
 ```bash
-docker compose --profile worker up -d --build worker
+docker compose --profile worker up -d --build worker beat
 ```
 
-This mounts `/var/run/docker.sock` and the sandbox work directory. Docker socket access gives the worker control over the host Docker daemon (effectively root-equivalent access); use this only on a trusted, isolated machine. Do not run both the host and container worker unless you intentionally want multiple consumers.
+The worker mounts `/var/run/docker.sock` and the sandbox work directory; the separate Beat service runs the recovery sweeper. Docker socket access gives the worker control over the host Docker daemon (effectively root-equivalent access); use this only on a trusted, isolated machine. Run exactly one Beat service. Do not run both the host and container worker unless you intentionally want multiple consumers.
 
 ### Vite development frontend
 
@@ -102,8 +103,11 @@ Vite listens on <http://localhost:5173> and uses `VITE_API_URL`, defaulting to `
 3. Select Python 3 or C++17, edit the starter code, and submit.
 4. The submission page polls every second until grading completes. It displays the verdict, wall/CPU time, peak memory, and per-test metrics without revealing hidden inputs or expected outputs.
 5. Review history at `/submissions` and runtime, memory, pass-rate, and verdict statistics at `/dashboard`.
+6. Create a batch at `/batch`, then monitor it at `/batches` or `/batch/{id}`. The batch page accepts source files, JSONL, JSON, or CSV; it validates and previews rows before submission. The seeded A+B problem can be used with the 120-sample demo button to exercise correct, wrong, runtime-error, timeout, and memory-limit verdicts.
 
 The frontend stores the JWT access token in local storage and attaches it to authenticated API calls. Unauthorized responses sign the user out; API/network and rate-limit errors appear as notices.
+
+Each batch can contain at most `BATCH_MAX_ITEMS` expanded submissions (500 by default). Repeats are expanded server-side, with a limit of 10 repeats per input row. Batch work uses lower RabbitMQ priority than interactive submissions.
 
 ## API examples
 
@@ -150,18 +154,44 @@ curl -sS http://localhost:8000/api/stats/summary \
 
 The UI also accepts `/submissions` as an alias for submission create/read/list routes. Hidden test data is never included in problem details or submission results.
 
+### Batch API
+
+Create a batch with JSON items. CSV and JSONL files can also be uploaded in the UI or passed to the benchmark script:
+
+```bash
+BATCH_ID=$(curl -sS -X POST http://localhost:8000/api/batches \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"example","model_name":"model-x","repeats":1,"items":[{"problem_id":1,"language_id":"python3","source_code":"print(sum(map(int, input().split())))","sample_id":"sample-1"}]}' \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -sS "http://localhost:8000/api/batches/$BATCH_ID" \
+  -H "Authorization: Bearer $TOKEN"
+curl -sS "http://localhost:8000/api/batches/$BATCH_ID/items?limit=50&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
+curl -sS "http://localhost:8000/api/batches/$BATCH_ID/export.csv" \
+  -H "Authorization: Bearer $TOKEN" -o batch.csv
+```
+
+Batch endpoints also support cancellation (`POST /api/batches/{id}/cancel`), re-running failed items (`POST /api/batches/{id}/rerun-failed`), and item filters for status, verdict, problem, language, and sort order. Cancellation stops pending submissions; already-running sandboxes finish normally. `GET /api/stats/summary?batch_id={id}` scopes statistics to an owned batch. All batch endpoints enforce ownership. Hidden test data is never included in problem details or submission results.
+
 ## Seed data and research scripts
 
 `make seed` creates the admin account using `ADMIN_EMAIL` and `ADMIN_PASSWORD` and seeds six problems with sample and hidden test cases. Set these variables in `.env` before seeding if you need different credentials.
 
-The scripts are under `scripts/`. **The current benchmark and metrics scripts are demo stubs, not a live benchmark client:** `benchmark.py` writes two fixed example rows to `results.csv`, and `metrics.py` prints those rows. They do not authenticate, submit solutions, poll the API, or calculate research metrics yet.
+The scripts under `scripts/` authenticate, submit batch workloads, poll them to completion, export result CSV, and calculate per-model metrics. Set credentials in the environment rather than passing them on a shared command line:
 
 ```bash
-python scripts/benchmark.py
-python scripts/metrics.py
+export CODEJUDGE_API_URL=http://localhost:8000/api
+export CODEJUDGE_EMAIL=researcher@example.com
+export CODEJUDGE_PASSWORD='your-password'
+
+python scripts/benchmark.py --input samples.jsonl --model-name model-x --repeats 2 --out results.csv
+python scripts/metrics.py --input results.csv --out metrics.csv
+python scripts/load_test.py --count 120 --problem-id 1
 ```
 
-Do not use the demo output for research conclusions. For real submissions, use the API flow above; execution timing on shared hardware is noisy, so repeat samples and compare medians.
+Inputs may be JSONL, JSON arrays/objects, or CSV with `problem_id`, `language_id`, and `source_code` fields. The benchmark tool chunks inputs larger than the API's batch limit. Metrics include pass@k (k=1, 5, 10), pass rate, timing and memory percentiles, throughput, and queue wait. The synthetic load-test script generates correct, wrong-answer, and runtime-error submissions. Shared-host timing is noisy; use repeats, compare medians, and report the worker/container configuration.
 
 ## Development and verification
 
@@ -172,7 +202,7 @@ make frontend   # Frontend TypeScript check and production build
 make test-docker  # Docker-marked tests, if available
 ```
 
-Docker integration tests require the sandbox images and a working Docker daemon. The current test suite does not yet include Docker-marked adversarial tests. To rebuild and start the full local stack:
+Docker integration tests require both sandbox images and a working Docker daemon. They exercise sandbox verdicts and recovery/orphan cleanup after a worker container is killed. To rebuild and start the full local stack:
 
 ```bash
 make images
@@ -192,4 +222,4 @@ make seed
 
 ## Production notes
 
-Keep the API and frontend separate from worker hosts. Workers need database/broker connectivity and Docker access, but should not receive API-only secrets. Use managed PostgreSQL and a managed broker where appropriate. Configure production credentials through deployment secrets, never by committing them to the repository.
+Keep the API and frontend separate from worker hosts. Workers need database/broker connectivity and Docker access, but should not receive API-only secrets. Use managed PostgreSQL and a managed broker where appropriate. Configure production credentials through deployment secrets, never by committing them to the repository. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for batch capacity settings, RabbitMQ queue migration, and production Beat requirements.

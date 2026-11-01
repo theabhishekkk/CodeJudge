@@ -42,7 +42,7 @@ services:
       context: ./backend
     command: uvicorn codejudge.api.main:app --host 0.0.0.0 --port 8000
     env_file:
-      - .env.example
+      - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-codejudge}
       POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-codejudge}
@@ -76,6 +76,7 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+        VITE_BATCH_MAX_ITEMS: ${VITE_BATCH_MAX_ITEMS:-500}
     depends_on:
       - api
     ports:
@@ -97,12 +98,33 @@ services:
       BROKER_URL: amqp://guest:guest@rabbitmq:5672//
       REDIS_URL: redis://redis:6379/0
       SANDBOX_WORKDIR: /tmp/codejudge
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      MAX_PARALLEL_CONTAINERS: ${MAX_PARALLEL_CONTAINERS:-8}
+      WORKER_HOST_ID: ${WORKER_HOST_ID:-codejudge-worker}
+      BATCH_MAX_ITEMS: ${BATCH_MAX_ITEMS:-500}
+      BATCH_STALE_PENDING_SECONDS: ${BATCH_STALE_PENDING_SECONDS:-120}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/codejudge:/tmp/codejudge
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    profiles: ["worker"]
+    build:
+      context: ./backend
+    command: celery -A codejudge.worker.celery_app beat --loglevel=info
+    environment:
+      BROKER_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672//
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
       rabbitmq:
         condition: service_healthy
       redis:
