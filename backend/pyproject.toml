@@ -39,7 +39,8 @@ packages = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-addopts = "-q"
+addopts = "-q -m 'not docker'"
+markers = ["docker: tests requiring a local Docker daemon and prebuilt sandbox images"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
