@@ -1,8 +1,25 @@
 # CodeJudge
 
-CodeJudge is an online judge and research harness for evaluating generated code against public samples and hidden test cases. The FastAPI API accepts submissions, RabbitMQ/Celery dispatches them to workers, and each test runs in a fresh Docker sandbox. The API never executes submitted code.
+> **Grade generated code without trusting it.**
 
-Supported languages are Python 3 and C++17. Verdicts are Accepted (`AC`), Wrong Answer (`WA`), Time Limit Exceeded (`TLE`), Memory Limit Exceeded (`MLE`), and Runtime Error (`RE`).
+CodeJudge is a self-hostable online judge and evaluation harness for AI-generated code. Submit one solution or a full experiment batch; each test runs in a fresh, resource-limited Docker sandbox—not in the API process.
+
+![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/UI-React-61DAFB?logo=react&logoColor=black)
+![Docker](https://img.shields.io/badge/Execution-Docker-2496ED?logo=docker&logoColor=white)
+
+**Python 3 · C++17 · AC / WA / RE / TLE / MLE · batch runs · CSV research exports**
+
+### Built for safe grading and useful results
+
+| Run safely | Test at scale | Understand outcomes |
+|---|---|---|
+| Network-isolated containers with CPU, memory, process, and filesystem limits | Submit files, JSONL, JSON, or CSV; track live batch progress | Inspect verdicts and per-test resource metrics, export results, and compare model runs |
+
+Use the built-in A+B demo to exercise all five verdicts. For the system design and deployment model, see [Architecture](docs/ARCHITECTURE.md) and [Deployment](docs/DEPLOYMENT.md). Planning to host CodeJudge? Start with the deployment guide—it explains why sandbox workers should run separately from the public-facing API.
+
+**Verdicts:** Accepted (`AC`), Wrong Answer (`WA`), Runtime Error (`RE`), Time Limit Exceeded (`TLE`), and Memory Limit Exceeded (`MLE`).
 
 ## Architecture
 
@@ -39,6 +56,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DEPLOYMENT.md](docs/D
 - [Development and verification](#development-and-verification)
 - [Security and limitations](#security-and-limitations)
 - [Deployment and upgrades](#deployment-and-upgrades)
+- [Windows & WSL2 troubleshooting](#windows--wsl2-troubleshooting)
 
 ## Quickstart (Docker Desktop or Docker Engine)
 
@@ -86,7 +104,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DEPLOYMENT.md](docs/D
    make worker WORKER_POOL=threads WORKER_CONCURRENCY=4
    ```
 
-   This development command includes Celery Beat (`-B`) to run periodic recovery. The worker consumes the `codejudge` queue. Threads are also recommended for Windows; do not start another Beat service at the same time.
+   This development command includes Celery Beat (`-B`) to run periodic recovery. `make worker` loads the repository-root `.env` before starting Celery, including when the worker runs from `backend/`. Threads are also recommended for Windows; do not start another Beat service at the same time.
 
    ```bash
    # Stop with Ctrl+C when finished.
@@ -418,13 +436,15 @@ The easiest way to check service state is `docker compose ps`; API and frontend 
 
 - **Line endings:** Git must check out repository text files with LF (Linux) line endings. CRLF files can prevent Linux Docker sandbox runner scripts from starting correctly and can surface as Runtime Error verdicts. The repository's `.gitattributes` enforces LF; in WSL, set `git config --global core.autocrlf false` and, if needed, re-normalize tracked files with `git add --renormalize .`.
 - **Resource constraints:** On machines with 8 GB RAM or less, set `MAX_PARALLEL_CONTAINERS=1` in `.env` and start the host worker with `WORKER_CONCURRENCY=1`. Limiting both concurrent sandboxes and worker tasks helps prevent out-of-memory kills and swap-induced Time Limit Exceeded (TLE) verdicts.
+- **Host worker workspace:** The host worker must be able to create submission directories in `SANDBOX_WORKDIR`. Docker-created `/tmp/codejudge` directories can be owned by root and unwritable by the WSL user; use a user-owned path such as `$HOME/.cache/codejudge` in `.env` for host workers.
 
 To rebuild both sandbox images and restart the local services with those resource settings:
 
 ```bash
-# Add these settings to .env before starting the worker:
+# Set these values in .env before starting the worker:
 # MAX_PARALLEL_CONTAINERS=1
 # WORKER_CONCURRENCY=1
+# SANDBOX_WORKDIR=/home/<your-user>/.cache/codejudge
 docker compose down
 make images
 make up
@@ -435,7 +455,9 @@ if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
 set -a
 source .env
 set +a
+mkdir -p "$SANDBOX_WORKDIR"
+chmod 700 "$SANDBOX_WORKDIR"
 make worker WORKER_POOL=threads WORKER_CONCURRENCY=1
 ```
 
-`make up` already starts Compose services in detached mode and waits for health checks; do not append `-d` to the Make command. The `.env` is sourced before starting the host worker so `MAX_PARALLEL_CONTAINERS` applies to its sandbox-capacity limit as well as Compose. The worker command runs in the foreground; keep that terminal open and stop it with Ctrl+C. `docker compose down` preserves named database volumes; do not add `-v` unless you intend to delete persisted data.
+`make up` already starts Compose services in detached mode and waits for health checks; do not append `-d` to the Make command. `make worker` loads the repository-root `.env` before starting Celery, so the host worker uses the same workspace and capacity settings as Compose even though it runs from `backend/`. The worker command runs in the foreground; keep that terminal open and stop it with Ctrl+C. `docker compose down` preserves named database volumes; do not add `-v` unless you intend to delete persisted data.
