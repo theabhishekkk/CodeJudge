@@ -432,7 +432,10 @@ sleep 5
 make migrate
 make seed
 if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
+set -a
+source .env
+set +a
 make worker WORKER_POOL=threads WORKER_CONCURRENCY=1
 ```
 
-`make up` already starts Compose services in detached mode and waits for health checks; do not append `-d` to the Make command. The worker command runs in the foreground; keep that terminal open and stop it with Ctrl+C. `docker compose down` preserves named database volumes; do not add `-v` unless you intend to delete persisted data.
+`make up` already starts Compose services in detached mode and waits for health checks; do not append `-d` to the Make command. The `.env` is sourced before starting the host worker so `MAX_PARALLEL_CONTAINERS` applies to its sandbox-capacity limit as well as Compose. The worker command runs in the foreground; keep that terminal open and stop it with Ctrl+C. `docker compose down` preserves named database volumes; do not add `-v` unless you intend to delete persisted data.
