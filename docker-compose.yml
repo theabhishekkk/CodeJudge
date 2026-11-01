@@ -1,0 +1,131 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-codejudge}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d codejudge"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+    command: uvicorn codejudge.api.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-codejudge}
+      POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-codejudge}
+      BROKER_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672//
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please-use-long-enough-key}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-before-deploy}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+        VITE_BATCH_MAX_ITEMS: ${VITE_BATCH_MAX_ITEMS:-500}
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    profiles: ["worker"]
+    build:
+      context: ./backend
+    command: celery -A codejudge.worker.celery_app worker --loglevel=info --queues=codejudge --pool=${WORKER_POOL:-threads}
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/codejudge
+      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/codejudge
+      BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+      REDIS_URL: redis://redis:6379/0
+      SANDBOX_WORKDIR: /tmp/codejudge
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      MAX_PARALLEL_CONTAINERS: ${MAX_PARALLEL_CONTAINERS:-8}
+      WORKER_HOST_ID: ${WORKER_HOST_ID:-codejudge-worker}
+      BATCH_MAX_ITEMS: ${BATCH_MAX_ITEMS:-500}
+      BATCH_STALE_PENDING_SECONDS: ${BATCH_STALE_PENDING_SECONDS:-120}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/codejudge:/tmp/codejudge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    profiles: ["worker"]
+    build:
+      context: ./backend
+    command: celery -A codejudge.worker.celery_app beat --loglevel=info
+    environment:
+      BROKER_URL: amqp://${RABBITMQ_DEFAULT_USER:-guest}:${RABBITMQ_DEFAULT_PASS:-guest}@rabbitmq:5672//
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

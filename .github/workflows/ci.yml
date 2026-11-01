@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install backend deps
+        run: |
+          cd backend
+          python -m pip install -U pip
+          pip install -e .
+      - name: Unit tests
+        run: |
+          cd backend
+          pytest -q
+      - name: Frontend build
+        run: |
+          cd frontend
+          npm install
+          npm run build
+      - name: Deploy
+        if: github.ref == 'refs/heads/main' && secrets.DEPLOY_SSH_KEY != ''
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/codejudge
+            git pull
+            docker compose pull
+            docker compose up -d --remove-orphans

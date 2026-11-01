@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+.venv/
+node_modules/
+dist/
+coverage/
+backend/test.db
+
+*.tsbuildinfo
+.venv/
