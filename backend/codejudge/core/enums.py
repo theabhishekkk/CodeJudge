@@ -13,6 +13,13 @@ class SubmissionStatus(str, Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     ERROR = "ERROR"
+    CANCELLED = "CANCELLED"
+
+
+class BatchStatus(str, Enum):
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class Verdict(str, Enum):

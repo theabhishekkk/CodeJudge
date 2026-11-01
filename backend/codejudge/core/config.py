@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -22,6 +23,15 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     RATE_LIMIT_PER_MINUTE: int = 60
+    BATCH_MAX_ITEMS: int = 500
+    BATCH_RATE_PER_HOUR: int = 20
+    MAX_ACTIVE_SUBMISSIONS_PER_USER: int = 1000
+    BATCH_REQUEST_MAX_BYTES: int = 20 * 1024 * 1024
+    BATCH_STALE_PENDING_SECONDS: int = 120
+    WORKER_CONCURRENCY: int = Field(default_factory=lambda: min(os.cpu_count() or 1, 4))
+    MAX_PARALLEL_CONTAINERS: int = Field(default_factory=lambda: (os.cpu_count() or 1) * 2)
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
     SANDBOX_WORKDIR: str = "/tmp/codejudge"
     SANDBOX_RUNTIME: str = ""
     STOP_ON_FIRST_FAIL: bool = True
