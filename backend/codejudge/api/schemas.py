@@ -73,6 +73,16 @@ class ProblemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProblemSampleOut(BaseModel):
+    ordinal: int
+    input: str
+    expected_output: str
+
+
+class ProblemDetailOut(ProblemOut):
+    sample_tests: list[ProblemSampleOut]
+
+
 class SubmissionOut(BaseModel):
     id: str
     user_id: int

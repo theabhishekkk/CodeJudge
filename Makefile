@@ -19,7 +19,7 @@ images:
 	@bash scripts/build_images.sh
 
 worker:
-	@cd backend && celery -A codejudge.worker.celery_app worker --loglevel=info $(CELERY_POOL)
+	@cd backend && celery -A codejudge.worker.celery_app worker --loglevel=info --queues=codejudge $(CELERY_POOL)
 
 test:
 	@cd backend && $(PYTHON) -m pytest

@@ -90,7 +90,7 @@ services:
     profiles: ["worker"]
     build:
       context: ./backend
-    command: celery -A codejudge.worker.celery_app worker --loglevel=info
+    command: celery -A codejudge.worker.celery_app worker --loglevel=info --queues=codejudge
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/codejudge
       POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/codejudge

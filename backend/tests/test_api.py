@@ -24,7 +24,7 @@ def test_register_login_and_submit(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         celery_app,
         "send_task",
-        lambda task_name, args: queued.append((task_name, args)),
+        lambda task_name, args, queue: queued.append((task_name, args, queue)),
     )
     reg = client.post("/api/auth/register", json={"email": "admin@example.com", "password": "secret123"})
     assert reg.status_code == 200, reg.text
@@ -37,6 +37,10 @@ def test_register_login_and_submit(monkeypatch: MonkeyPatch) -> None:
         headers=headers,
     )
     assert problem.status_code in {200, 201}, problem.text
+    samples = client.get("/api/problems/1", headers=headers)
+    assert samples.status_code == 200
+    assert len(samples.json()["sample_tests"]) == 1
+    assert "hidden input" not in samples.text
 
     submit = client.post(
         "/submissions",
@@ -46,9 +50,16 @@ def test_register_login_and_submit(monkeypatch: MonkeyPatch) -> None:
     assert submit.status_code == 202, submit.text
     assert "id" in submit.json()
     assert queued == [
-        ("codejudge.worker.tasks.evaluate_submission", [submit.json()["id"]])
+        ("codejudge.worker.tasks.evaluate_submission", [submit.json()["id"]], "codejudge")
     ]
     details = client.get(f"/submissions/{submit.json()['id']}", headers=headers)
     assert details.status_code == 200
     assert "expected_output" not in details.text
     assert "input" not in details.text
+
+    summary = client.get("/api/stats/summary", headers=headers)
+    assert summary.status_code == 200
+    assert summary.json()["total"] == 1
+    assert summary.json()["verdicts"]["PENDING"] == 1
+    assert "median_time_ms" in summary.json()
+    assert "p95_memory_kb" in summary.json()

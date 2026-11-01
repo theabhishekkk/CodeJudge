@@ -49,6 +49,7 @@ def create_submission(payload: SubmissionCreateRequest, db: Session = Depends(ge
         celery_app.send_task(
             "codejudge.worker.tasks.evaluate_submission",
             args=[submission.id],
+            queue="codejudge",
         )
     except Exception as exc:
         logger.error("Could not enqueue submission %s", submission.id)
@@ -85,7 +86,10 @@ def get_submission(submission_id: str, db: Session = Depends(get_db), user: User
         "verdict": submission.verdict,
         "detail": submission.detail,
         "max_time_ms": submission.max_time_ms,
+        "max_cpu_ms": max((result.cpu_ms for result, _ in results), default=None),
         "max_memory_kb": submission.max_memory_kb,
+        "created_at": submission.created_at,
+        "finished_at": submission.finished_at,
         "test_results": [
             {
                 "ordinal": ordinal,
@@ -115,10 +119,16 @@ def list_submissions(
         .limit(limit)
         .all()
     )
-    return [{
-        "id": item.id,
-        "problem_id": item.problem_id,
-        "status": item.status,
-        "verdict": item.verdict,
-        "created_at": item.created_at,
-    } for item in items]
+    return [
+        {
+            "id": item.id,
+            "problem_id": item.problem_id,
+            "language_id": item.language_id,
+            "status": item.status,
+            "verdict": item.verdict,
+            "max_time_ms": item.max_time_ms,
+            "max_memory_kb": item.max_memory_kb,
+            "created_at": item.created_at,
+        }
+        for item in items
+    ]

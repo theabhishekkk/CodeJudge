@@ -7,7 +7,7 @@ from codejudge.core.db import get_db
 from codejudge.core.models import Problem, TestCase, User
 
 from ..deps import get_current_admin, get_current_user
-from ..schemas import ProblemCreateRequest, ProblemOut
+from ..schemas import ProblemCreateRequest, ProblemDetailOut, ProblemOut
 
 router = APIRouter(prefix="/problems", tags=["problems"])
 
@@ -17,12 +17,32 @@ def list_problems(db: Session = Depends(get_db), user: User = Depends(get_curren
     return db.query(Problem).all()
 
 
-@router.get("/{problem_id}", response_model=ProblemOut)
-def get_problem(problem_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> Problem:
+@router.get("/{problem_id}", response_model=ProblemDetailOut)
+def get_problem(problem_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict[str, object]:
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
     if problem is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Problem not found")
-    return problem
+    samples = (
+        db.query(TestCase)
+        .filter(TestCase.problem_id == problem.id, TestCase.is_hidden.is_(False))
+        .order_by(TestCase.ordinal)
+        .all()
+    )
+    return {
+        "id": problem.id,
+        "title": problem.title,
+        "statement": problem.statement,
+        "time_limit_ms": problem.time_limit_ms,
+        "memory_limit_mb": problem.memory_limit_mb,
+        "sample_tests": [
+            {
+                "ordinal": sample.ordinal,
+                "input": sample.input,
+                "expected_output": sample.expected_output,
+            }
+            for sample in samples
+        ],
+    }
 
 
 @router.post("", response_model=ProblemOut)
