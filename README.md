@@ -412,6 +412,14 @@ make seed
 
 For production, keep the API/frontend separate from trusted worker hosts. Workers need PostgreSQL, RabbitMQ, Redis, and Docker access; do not pass API JWT or admin credentials to worker containers. Run exactly one Celery Beat service per deployment so the recovery sweeper does not run redundantly.
 
+### Before exposing a deployment publicly
+
+- Replace every development credential with a unique, randomly generated secret; keep secrets in the host's secret manager or a private environment file.
+- Put the frontend and API behind HTTPS, and set `CORS_ALLOW_ORIGINS` to the exact frontend origin.
+- Keep Docker access limited to trusted worker hosts. Anyone who can access the Docker socket can control that host.
+- Back up PostgreSQL and monitor API health, queue depth, worker availability, and sandbox capacity.
+- Start exactly one Beat scheduler and verify worker hosts have the required sandbox images before accepting submissions.
+
 ### Upgrade an existing deployment
 
 Back up PostgreSQL and stop producers/consumers before performing the one-time priority-queue change. First inspect the `codejudge` queue and confirm it is drained. Deleting a non-empty queue discards its broker messages (the database retains rows, which the recovery sweeper can later republish):
