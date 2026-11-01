@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -54,6 +54,19 @@ class SubmissionCreateRequest(BaseModel):
 
 class SubmissionResponse(BaseModel):
     id: str
+    status: str
+
+
+class BatchCreateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    model_name: Optional[str] = Field(default=None, max_length=255)
+    repeats: int = Field(default=1, ge=1, le=10)
+    items: list[Any] = Field(min_length=1)
+
+
+class BatchResponse(BaseModel):
+    id: str
+    total: int
     status: str
 
 

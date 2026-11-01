@@ -50,6 +50,7 @@ def create_submission(payload: SubmissionCreateRequest, db: Session = Depends(ge
             "codejudge.worker.tasks.evaluate_submission",
             args=[submission.id],
             queue="codejudge",
+            priority=5,
         )
     except Exception as exc:
         logger.error("Could not enqueue submission %s", submission.id)

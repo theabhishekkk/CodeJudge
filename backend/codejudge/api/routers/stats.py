@@ -4,11 +4,11 @@ import math
 from statistics import median
 from typing import Sequence
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from codejudge.core.db import get_db
-from codejudge.core.models import RunResult, Submission, User
+from codejudge.core.models import Batch, RunResult, Submission, User
 
 from ..deps import get_current_user
 
@@ -24,8 +24,23 @@ def _percentile(values: Sequence[int], percentile: float) -> float | None:
 
 
 @router.get("/summary")
-def summary(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict[str, object]:
-    items = db.query(Submission).filter(Submission.user_id == user.id).all()
+def summary(
+    batch_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    query = db.query(Submission).filter(Submission.user_id == user.id)
+    if batch_id is not None:
+        batch = db.query(Batch).filter(Batch.id == batch_id).first()
+        if batch is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+        if batch.user_id != user.id and user.role != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        if user.role == "admin":
+            query = db.query(Submission).filter(Submission.batch_id == batch.id)
+        else:
+            query = query.filter(Submission.batch_id == batch.id)
+    items = query.all()
     verdicts = {verdict: 0 for verdict in ("AC", "WA", "TLE", "MLE", "RE", "PENDING", "RUNNING", "ERROR")}
     for item in items:
         verdict = item.verdict if item.status == "COMPLETED" and item.verdict else item.status

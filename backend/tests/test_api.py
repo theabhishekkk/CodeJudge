@@ -20,11 +20,11 @@ client = TestClient(app)
 
 
 def test_register_login_and_submit(monkeypatch: MonkeyPatch) -> None:
-    queued: list[tuple[str, list[str]]] = []
+    queued: list[tuple[str, list[str], str, int]] = []
     monkeypatch.setattr(
         celery_app,
         "send_task",
-        lambda task_name, args, queue: queued.append((task_name, args, queue)),
+        lambda task_name, args, queue, priority: queued.append((task_name, args, queue, priority)),
     )
     reg = client.post("/api/auth/register", json={"email": "admin@example.com", "password": "secret123"})
     assert reg.status_code == 200, reg.text
@@ -50,7 +50,7 @@ def test_register_login_and_submit(monkeypatch: MonkeyPatch) -> None:
     assert submit.status_code == 202, submit.text
     assert "id" in submit.json()
     assert queued == [
-        ("codejudge.worker.tasks.evaluate_submission", [submit.json()["id"]], "codejudge")
+        ("codejudge.worker.tasks.evaluate_submission", [submit.json()["id"]], "codejudge", 5)
     ]
     details = client.get(f"/submissions/{submit.json()['id']}", headers=headers)
     assert details.status_code == 200
