@@ -1,37 +1,37 @@
 PYTHON ?= python
-PIP ?= pip
+CELERY_POOL ?=
 
 .PHONY: up down migrate seed images worker test test-docker lint bench frontend
 
 up:
-	@docker compose up -d
+	@docker compose up -d --build --wait postgres rabbitmq redis api frontend
 
 down:
-	@docker compose down -v
+	@docker compose down
 
 migrate:
-	@cd backend && python -m alembic upgrade head
+	@docker compose exec -T api alembic upgrade head
 
 seed:
-	@cd backend && $(PYTHON) scripts/seed.py
+	@docker compose exec -T api python scripts/seed.py
 
 images:
 	@bash scripts/build_images.sh
 
 worker:
-	@cd backend && celery -A codejudge.worker.celery_app worker --loglevel=info
+	@cd backend && celery -A codejudge.worker.celery_app worker --loglevel=info $(CELERY_POOL)
 
 test:
-	@cd backend && pytest
+	@cd backend && $(PYTHON) -m pytest
 
 test-docker:
-	@cd backend && pytest -m docker
+	@cd backend && $(PYTHON) -m pytest -m docker
 
 lint:
-	@cd backend && ruff check .
+	@cd backend && $(PYTHON) -m ruff check .
 
 bench:
-	@cd backend && $(PYTHON) scripts/benchmark.py
+	@$(PYTHON) scripts/benchmark.py
 
 frontend:
-	@cd frontend && npm install && npm run build
+	@cd frontend && npm ci && npm run build

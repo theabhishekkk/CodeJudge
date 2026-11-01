@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
 
 _TOKEN_SPLIT = re.compile(r"\s+")
 

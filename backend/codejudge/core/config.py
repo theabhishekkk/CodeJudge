@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +12,10 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "CodeJudge"
     APP_ENV: Literal["dev", "prod", "test"] = "dev"
-    DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/codejudge"
+    DATABASE_URL: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost:5432/codejudge",
+        validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL"),
+    )
     REDIS_URL: str = "redis://localhost:6379/0"
     BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
     JWT_SECRET: str = "change-me-in-production-please-use-long-enough-key"
@@ -21,6 +24,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     SANDBOX_WORKDIR: str = "/tmp/codejudge"
     SANDBOX_RUNTIME: str = ""
+    STOP_ON_FIRST_FAIL: bool = True
     POSTGRES_DB: str = "codejudge"
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"

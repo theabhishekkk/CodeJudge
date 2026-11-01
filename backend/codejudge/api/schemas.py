@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from codejudge.core.enums import Language, Verdict
+from codejudge.core.enums import Language
 
 
 class RegisterRequest(BaseModel):

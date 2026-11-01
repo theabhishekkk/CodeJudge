@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
@@ -11,6 +10,8 @@ def create_submission_workdir(root: str, submission_id: str) -> Path:
     tests_dir = base_dir / "tests"
     code_dir.mkdir(parents=True, exist_ok=True)
     tests_dir.mkdir(parents=True, exist_ok=True)
+    code_dir.chmod(0o755)
+    tests_dir.chmod(0o755)
     return base_dir
 
 

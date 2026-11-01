@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
-from .enums import Language, SubmissionStatus, Verdict
+from .enums import Language, SubmissionStatus
 
 
 class User(Base):

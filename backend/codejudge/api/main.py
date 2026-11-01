@@ -21,6 +21,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(problems.router, prefix="/api")
 app.include_router(submissions.router, prefix="/api")
+app.include_router(submissions.router)
 app.include_router(stats.router, prefix="/api")
 
 
