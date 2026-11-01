@@ -250,11 +250,24 @@ print(values[0] + values[1])`,
 
 const CPP_VARIANTS = [
   `#include <iostream>
-int main() { long long a, b; std::cin >> a >> b; std::cout << a + b << '\\n'; }`,
+int main() { long long a, b; std::cin >> a >> b; std::cout << a + b << std::endl; }`,
   `#include <iostream>
 using namespace std;
 int main() { int a, b; if (cin >> a >> b) cout << (a + b) << endl; }`,
 ];
+
+const MLE_ALLOCATION_SIZES_MB = [320, 352, 384, 416, 448, 480, 512, 544, 576, 608];
+const MLE_VARIANTS = MLE_ALLOCATION_SIZES_MB.map(
+  (allocationSize, index) => `import mmap
+size = ${allocationSize} * 1024 * 1024
+data = mmap.mmap(-1, size)
+populate_write = getattr(mmap, 'MADV_POPULATE_WRITE', 23)
+try:
+    data.madvise(populate_write)
+except (AttributeError, OSError):
+    pass
+data[::4096] = bytes([${index + 1}]) * ((size + 4095) // 4096)`,
+);
 
 export function createDemoBatch(problemId: number): BatchDraftItem[] {
   const items: BatchDraftItem[] = [];
@@ -279,8 +292,7 @@ export function createDemoBatch(problemId: number): BatchDraftItem[] {
   add(10, 'RE', 'python3', "raise RuntimeError('demo runtime error')");
   add(10, 'TLE', 'python3', `while True:
     pass`);
-  add(10, 'MLE', 'python3', `data = bytearray(2 * 1024 * 1024 * 1024)
-print(0)`);
+  add(10, 'MLE', 'python3', MLE_VARIANTS);
   return items;
 }
 

@@ -545,7 +545,6 @@ export function BatchLivePage() {
       const actual = row.verdict;
       const item = counts[expected] ?? { expected: 0, actual: 0 };
       item.expected += 1;
-      if (actual) item.actual += 1;
       if (isTerminal(row.status)) {
         terminal += 1;
         if (actual === expected) matched += 1;
@@ -553,8 +552,14 @@ export function BatchLivePage() {
       }
       counts[expected] = item;
     }
-    return { counts, matched, terminal, mismatches };
-  }, [demoRows]);
+    for (const [verdict, count] of Object.entries(summary?.verdicts ?? {})) {
+      const item = counts[verdict] ?? { expected: 0, actual: 0 };
+      item.actual = count;
+      counts[verdict] = item;
+    }
+    const actualTotal = Object.values(summary?.verdicts ?? {}).reduce((total, count) => total + count, 0);
+    return { counts, matched, terminal, mismatches, actualTotal };
+  }, [demoRows, summary?.verdicts]);
 
   async function cancelBatch() {
     setActionInFlight(true);
@@ -678,7 +683,7 @@ export function BatchLivePage() {
 
       {isDemo && (
         <section className="card batch-expected-card">
-          <div className="table-heading"><div><p className="eyebrow">Demo verification</p><h2>Expected vs actual</h2></div><strong>{demoExpected.matched}/{processedDemoCount} matches</strong></div>
+          <div className="table-heading"><div><p className="eyebrow">Demo verification</p><h2>Expected vs actual</h2></div><strong>{demoExpected.matched}/{processedDemoCount} matches · {demoExpected.actualTotal}/{summary.total} verdicts</strong></div>
           <div className="batch-mini-verdicts">
             {Object.entries(demoExpected.counts).map(([verdict, counts]) => (
               <span key={verdict}><BatchBadge value={verdict} /> expected {counts.expected} · actual {counts.actual}</span>

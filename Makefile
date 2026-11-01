@@ -26,7 +26,10 @@ images:
 	@bash scripts/build_images.sh
 
 worker:
-	@cd backend && celery -A codejudge.worker.celery_app worker --loglevel=info --queues=codejudge -B $(WORKER_POOL_FLAG) $(WORKER_CONCURRENCY_FLAG)
+	@set -a; \
+	if [ -f .env ]; then . ./.env; fi; \
+	set +a; \
+	cd backend && celery -A codejudge.worker.celery_app worker --loglevel=info --queues=codejudge -B $(WORKER_POOL_FLAG) $(WORKER_CONCURRENCY_FLAG)
 
 test:
 	@cd backend && $(PYTHON) -m pytest
